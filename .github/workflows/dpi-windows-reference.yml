@@ -35,10 +35,17 @@ jobs:
           $code = $LASTEXITCODE
           "PROBE_EXIT_CODE=$code" | Tee-Object -FilePath reference.txt -Append
           exit $code
+      - name: Run upstream regression (native x86 binary)
+        shell: pwsh
+        run: |
+          Get-FileHash ci/user32_sysparams_test.exe | Format-List
+          & .\ci\user32_sysparams_test.exe sysparams dpi_reparent_only 2>&1 | Tee-Object upstream-reference.txt
+          exit $LASTEXITCODE
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: dpi-reference-${{ matrix.os }}-${{ matrix.arch }}
           path: |
             reference.txt
+            upstream-reference.txt
             dpi-reparent-probe.exe
