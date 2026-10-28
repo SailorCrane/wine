@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 
 #define SNAPSHOT (WM_APP + 61)
 #define REPARENT (WM_APP + 62)
@@ -13,10 +14,11 @@ typedef struct {
     snapshot before, after;
     HWND result;
     DWORD error;
-    BOOL initialized;
+    BOOL initialized, snapshot_pending;
 } shared_data;
 static shared_data *shared;
-static int failures;
+static int failures, is_worker;
+static HANDLE worker_ready;
 
 static int awareness(DPI_AWARENESS_CONTEXT ctx)
 {
@@ -46,7 +48,7 @@ static void reparent(void)
 }
 static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
-    if (msg == SNAPSHOT) { shared->after = capture(hwnd, shared->original); return 1; }
+    if (msg == SNAPSHOT) { shared->snapshot_pending = TRUE; return 1; }
     if (msg == REPARENT) { reparent(); return 1; }
     return DefWindowProcA(hwnd, msg, wp, lp);
 }
@@ -54,6 +56,11 @@ static void pump(void)
 {
     MSG msg;
     while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) { TranslateMessage(&msg); DispatchMessageA(&msg); }
+    if (is_worker && shared->snapshot_pending) {
+        shared->after = capture(shared->child, shared->original);
+        shared->snapshot_pending = FALSE;
+        SetEvent(worker_ready);
+    }
 }
 static DWORD wait_pumping(HANDLE handle, DWORD timeout)
 {
@@ -77,6 +84,7 @@ static int worker(int argc, char **argv)
     shared = MapViewOfFile(map, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(*shared));
     if (!shared) return 20;
     if (!strcmp(argv[1], "third")) { reparent(); UnmapViewOfFile(shared); return 0; }
+    is_worker = TRUE; worker_ready = ready;
     if (!SetProcessDpiAwarenessContext((DPI_AWARENESS_CONTEXT)(intptr_t)~mode)) return 21;
     cls.lpfnWndProc = wndproc; cls.lpszClassName = "DpiReparentProbe"; cls.hInstance = GetModuleHandleA(NULL);
     if (!RegisterClassA(&cls)) return 22;
@@ -110,7 +118,7 @@ int main(int argc, char **argv)
     if (argc == 6) return worker(argc, argv);
     GetModuleFileNameA(NULL, exe, sizeof(exe));
     setbuf(stdout, NULL);
-    printf("DPI SetParent probe: awareness 0=unaware 1=system 2=per-monitor; p=process t=thread w=window s=sibling n=new-window\n");
+    printf("DPI SetParent probe: awareness 0=unaware 1=system 2=per-monitor; p=process t=thread w=window s=original-top-level n=new-window\n");
     /* Same-process control cases use mixed thread contexts. */
     for (i = 0; i < 3; i++) for (j = 0; j < 3; j++) {
         DPI_AWARENESS_CONTEXT orig = SetThreadDpiAwarenessContext((DPI_AWARENESS_CONTEXT)(intptr_t)~i);
@@ -144,7 +152,9 @@ int main(int argc, char **argv)
             if (wait_pumping(third.hProcess,5000)!=WAIT_OBJECT_0) return 35;
             CloseHandle(third.hProcess); CloseHandle(third.hThread);
         }
+        ResetEvent(ready);
         if (!SendMessageTimeoutA(shared->child,SNAPSHOT,0,0,SMTO_ABORTIFHUNG|SMTO_BLOCK,3000,&reply)) return 36;
+        if (wait_pumping(ready,5000) != WAIT_OBJECT_0) return 38;
         parent=GetAncestor(shared->child,GA_PARENT);
         pass=shared->result==shared->original && parent==host;
         printf("cross host=%d child=%d caller=%d old=%p error=%lu attached=%d %s",i,j,caller,shared->result,shared->error,parent==host,pass?"PASS":"FAIL");
