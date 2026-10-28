@@ -1,0 +1,44 @@
+name: Windows DPI reference
+on:
+  push:
+    branches: [ci/dpi-windows-reference]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  reference:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+        arch: [x86, x64]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record Windows version
+        shell: pwsh
+        run: |
+          Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' | Select-Object ProductName,DisplayVersion,CurrentBuild,UBR | Format-List
+      - name: Build native probe
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $dev = Join-Path $vs 'Common7\Tools\VsDevCmd.bat'
+          cmd /c "`"$dev`" -arch=${{ matrix.arch }} -host_arch=x64 && cl /nologo /W4 /O2 /D_WIN32_WINNT=0x0A00 /DWINVER=0x0A00 /TC /Fedpi-reparent-probe.exe ci\dpi-reparent-probe.c user32.lib gdi32.lib"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-FileHash dpi-reparent-probe.exe | Format-List
+      - name: Run Windows reference
+        shell: pwsh
+        run: |
+          & .\dpi-reparent-probe.exe 2>&1 | Tee-Object reference.txt
+          $code = $LASTEXITCODE
+          "PROBE_EXIT_CODE=$code" | Tee-Object -FilePath reference.txt -Append
+          exit $code
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dpi-reference-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            reference.txt
+            dpi-reparent-probe.exe
