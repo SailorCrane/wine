@@ -25,7 +25,7 @@ jobs:
         run: |
           $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
           $dev = Join-Path $vs 'Common7\Tools\VsDevCmd.bat'
-          cmd /c "`"$dev`" -arch=${{ matrix.arch }} -host_arch=x64 && cl /nologo /W4 /O2 /D_WIN32_WINNT=0x0A00 /DWINVER=0x0A00 /TC /Fedpi-reparent-probe.exe ci\dpi-reparent-probe.c user32.lib gdi32.lib"
+          cmd /c "`"$dev`" -arch=${{ matrix.arch }} -host_arch=x64 && cl /nologo /W4 /O2 /D_WIN32_WINNT=0x0A00 /DWINVER=0x0A00 /TC /Fedpi-reparent-probe.exe ci\dpi-reparent-probe.c /link user32.lib gdi32.lib"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-FileHash dpi-reparent-probe.exe | Format-List
       - name: Run Windows reference
