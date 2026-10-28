@@ -4725,8 +4725,7 @@ static void test_cross_process_dpi_child( HWND parent, unsigned int mode )
     ok( awareness == expected, "Expected process awareness %u, got %u\n", expected, awareness );
     context = pGetThreadDpiAwarenessContext();
     awareness = pGetAwarenessFromDpiAwarenessContext( context );
-    todo_wine_if( expected != mode )
-    ok( awareness == expected, "Expected thread awareness %u, got %u\n", expected, awareness );
+    ok( awareness == mode, "Expected thread awareness %u, got %u\n", mode, awareness );
     context = pGetWindowDpiAwarenessContext( child );
     awareness = pGetAwarenessFromDpiAwarenessContext( context );
     todo_wine_if( expected != mode )
